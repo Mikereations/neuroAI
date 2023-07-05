@@ -70,8 +70,12 @@ def intersect(line1, line2):
     Returns:
         tuple: The intersection point.
     """
-    intersection_x = (line2[1] - line1[1]) / (line1[0] - line2[0])
-    intersection_y = line1[0] * intersection_x + line1[1]
+    try :
+        intersection_x = (line2[1] - line1[1]) / (line1[0] - line2[0])
+        intersection_y = line1[0] * intersection_x + line1[1]
+    except ZeroDivisionError : 
+        intersection_x = -1
+        intersection_y = -1
     return (intersection_x, intersection_y)
 
 # Generate data
@@ -79,36 +83,55 @@ def generateData():
     # set the size of the image
     size = 64
     # Create a 2D array of zeros
-    data = np.zeros((size, size), dtype=np.uint8)
-    lines = []
-    # Generate the two random lines 
-    for i in range(2):
-        # Generate random points
-        x1 = random.randint(0, size - 1)
-        y1 = random.randint(0, size - 1)
-        x2 = x1 
-        while x2 == x1 : 
-            x2 = random.randint(0, size - 1)
-        y2 = y1
-        while y2 == y1 : 
-            y2 = random.randint(0, size - 1)
-        # get the line equation
-        m = (y2 - y1) / (x2 - x1)
-        lines.append((m, y2 - m*x2))
-        # Draw the line
-        if lines[-1][0] > 0 :
-            start_x, start_y, end_x, end_y = getLinePositiveSlope(lines[-1][0], lines[-1][1], size)
+    flag = True
+    while flag:
+        data = np.zeros((size, size), dtype=np.uint8)
+        lines = []
+        # Generate the two random lines 
+        for i in range(2):
+            # Generate random points
+            x1 = random.randint(0, size - 1)
+            y1 = random.randint(0, size - 1)
+            x2 = x1 
+            while x2 == x1 : 
+                x2 = random.randint(0, size - 1)
+            y2 = y1
+            while y2 == y1 : 
+                y2 = random.randint(0, size - 1)
+            # get the line equation
+            m = (y2 - y1) / (x2 - x1)
+            lines.append((m, y2 - m*x2))
+            # Draw the line
+            if lines[-1][0] > 0 :
+                start_x, start_y, end_x, end_y = getLinePositiveSlope(lines[-1][0], lines[-1][1], size)
+            else:
+                start_x, start_y, end_x, end_y = getLineNegativeSlope(lines[-1][0], lines[-1][1], size)
+            data = cv2.line(data, (int(start_x), int(start_y)), (int(end_x), int(end_y)), 1, 1)
+            # Save the data
+            plt.imsave('./data.png', data, cmap='gray')
+        # Find the intersection point
+        intersection = intersect(lines[0], lines[1])
+        if (intersection[0] < 0 or intersection[0] > size or intersection[1] < 0 or intersection[1] > size):
+            continue
         else:
-            start_x, start_y, end_x, end_y = getLineNegativeSlope(lines[-1][0], lines[-1][1], size)
-        data = cv2.line(data, (int(start_x), int(start_y)), (int(end_x), int(end_y)), 1, 1)
-        # Save the data
-        plt.imsave('./data.png', data, cmap='gray')
-    # Find the intersection point
-    intersection = intersect(lines[0], lines[1])
-    if (intersection[0] < 0 or intersection[0] > size or intersection[1] < 0 or intersection[1] > size):
-        print("The intersection point is outside the image.", intersection)
-    else:
-        print("The intersection point is inside the image.", intersection)
+            flag = False
+    return data
+
+def gen_batch(batch_size) : 
+    """
+    Generates a batch of data.
+    
+    Args:
+        batch_size (int): The size of the batch.
+    
+    Returns:
+        list: The batch of data.
+    """
+    batch = np.zeros((batch_size, 64, 64), dtype=np.uint8)
+    for i in range(batch_size):
+        batch[i] = generateData()
+        plt.imsave('./inputs/data_{}.png'.format(i), batch[i], cmap='gray')
+    return batch
     
 if __name__ == '__main__':
-    generateData()
+    gen_batch(64)
