@@ -59,15 +59,23 @@ if __name__ == "__main__":
         for epoch in range(1, args.epochs + 1):
             autoenc.train(epoch)
             autoenc.test(epoch)
+            if epoch % 10 == 0:
+                torch.save(autoenc.state_dict(), "./weights/" + 'saved_model_{}.pt'.format(epoch))
+                print('Model saved.')
     except (KeyboardInterrupt, SystemExit):
         print("Manual Interruption")
 
     with torch.no_grad():
-        gen_batch(64)
-        filenames = [name for name in os.listdir(autoenc.path)]
-        images = torch.zeros(64, 1, 64, 64, dtype=torch.uint8)
-        for i, filename in enumerate(filenames):
-            images[i] = torchvision.io.read_image(os.path.join(autoenc.path, filename))
+        size = 64
+        batch_size = 64
+        gen_batch(batch_size)
+        dir_names = [x for x in os.listdir(autoenc.model.path) if not ".png" in x]
+        batch_size = 64 * 82
+        images = torch.zeros(batch_size, 1, size, size)
+        for i, dirname in enumerate(dir_names):
+            filenames = [name for name in os.listdir(os.path.join(autoenc.model.path, dirname))]
+            for j, filename in enumerate(filenames):
+                images[i * 82 + j] = torchvision.io.read_image(os.path.join(autoenc.model.path, dirname, filename))[0, : , :]
         images = images.to(autoenc.device)
         images_per_row = 16
         interpolations = get_interpolations(args, autoenc.model, autoenc.device, images, images_per_row)

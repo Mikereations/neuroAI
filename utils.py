@@ -12,10 +12,10 @@ def get_interpolations(args, model, device, images, images_per_row=20):
             return torch.cat(interps, 0)
 
         if args.model == 'VAE':
-            mu, logvar = model.encode(images.view(-1, 784))
+            mu, logvar = model.encode(images.view(-1, 64**2))
             embeddings = model.reparameterize(mu, logvar).cpu()
         elif args.model == 'AE':
-            embeddings = model.encode(images.view(-1, 784))
+            embeddings = model.encode(images.view(-1, 64**2))
             
         interps = []
         for i in range(0, images_per_row+1, 1):

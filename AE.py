@@ -3,9 +3,11 @@ import torch.utils.data
 from torch import nn, optim
 from torch.nn import functional as F
 import os
+import numpy as np
 from generateData import gen_batch
 from torchvision import datasets, transforms
 import torchvision
+import matplotlib.pyplot as plt
 from PIL import Image
 
 import sys
@@ -19,7 +21,11 @@ class Network(nn.Module):
         self.encoder = CNN_Encoder(output_size)
         self.image_size = 64
         self.path = os.path.join("./", "inputs")
+        # calculated the class imbalance imprically from the data. class 1 occurs 0.0118 times as often as class 0
+        self.weights = torch.tensor([0.0118, 1.0])
         convert_tensor = transforms.ToTensor()
+        # initialize the loss function with the class imbalance weights
+        self.BCE = torch.nn.BCEWithLogitsLoss(pos_weight=self.weights)
         self.decoder = CNN_Decoder(args.embedding_size)
 
     def encode(self, x):
@@ -42,46 +48,70 @@ class AE(object):
         self.optimizer = optim.Adam(self.model.parameters(), lr=1e-3)
 
     def loss_function(self, recon_x, x):
-        BCE = F.binary_cross_entropy(recon_x, x.view(-1, self.model.image_size ** 2), reduction='sum')
-        return BCE
+        loss = self.BCE(recon_x, x.view(-1, self.model.image_size ** 2), reduction='sum')
+        return loss
 
     def train(self, epoch, batch_size=64):
         self.model.train()
         train_loss = 0
-        for batch_idx in range(100000):
+        for batch_idx in range(100):
             gen_batch(batch_size)
-            filenames = [name for name in os.listdir(self.model.path)]
+            dir_names = [x for x in os.listdir(self.model.path) if not ".png" in x and "data" in x]
+            filenum = [len(os.listdir(os.path.join(self.model.path, dirname))) for dirname in dir_names]
+            # print(np.sum(filenum))
+            batch_size = np.sum(filenum)
             data = torch.zeros(batch_size, 1, 64, 64)
-            for i, filename in enumerate(filenames):
-                data[i] = torchvision.io.read_image(os.path.join(self.model.path, filename))[0, : , :]
+            k = 0
+            batch_size = 64
+            for i, dirname in enumerate(dir_names):
+                filenames = [name for name in os.listdir(os.path.join(self.model.path, dirname))]
+                for j, filename in enumerate(filenames):
+                    data[k] = torchvision.io.read_image(os.path.join(self.model.path, dirname, filename))[0, : , :]/255
+                    k += 1
             data = data.to(self.device)
             self.optimizer.zero_grad()
             recon_batch = self.model(data)
+            # print(data[0])
             loss = self.loss_function(recon_batch, data)
             loss.backward()
+            # if batch_idx % 10 == 0:
+            #     # plt.imshow(data[13].view(64, 64).detach().numpy(), cmap='gray')
+            #     # plt.show()
+            #     positive = (data[13].view(-1).numpy() == 1)
+            #     print(data[13].view(-1).numpy()[positive])
+            #     print(recon_batch[13].view(-1).detach().numpy()[positive])
+            # print("loss: ", loss.item())
             train_loss += loss.item()
             self.optimizer.step()
-            if batch_idx % self.args.log_interval == 0:
-                print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                    epoch, batch_idx * 64, 64 * self.args.log_interval,
-                    100. * batch_idx / 64 * self.args.log_interval,
-                    loss.item() / 64))
+            if batch_idx % 10 == 0:
+                print('Train Epoch: {} [{}/{} ({:.1f}%)]\tLoss: {:.6f}'.format(
+                    epoch, batch_idx * len(data), 100 * len(data),
+                    float(batch_idx),
+                    loss.item() / len(data)))
         print('====> Epoch: {} Average loss: {:.4f}'.format(
-              epoch, train_loss / len(self.train_loader.dataset)))
+              epoch, train_loss / 100 * len(data)))
 
     def test(self, epoch):
         self.model.eval()
         test_loss = 0
         with torch.no_grad():
-            for i in range(100):
+            for i in range(10):
                 gen_batch(64)
-                filenames = [name for name in os.listdir(self.path)]
-                data = torch.zeros(64, 1, 64, 64)
-                for j, filename in enumerate(filenames):
-                    data[j] = torchvision.io.read_image(os.path.join(self.path, filename))
+                dir_names = [x for x in os.listdir(self.model.path) if not ".png" in x and "data" in x]
+                filenum = [len(os.listdir(os.path.join(self.model.path, dirname))) for dirname in dir_names]
+                # print(np.sum(filenum))
+                batch_size = np.sum(filenum)
+                data = torch.zeros(batch_size, 1, 64, 64)
+                k = 0
+                batch_size = 64
+                for i, dirname in enumerate(dir_names):
+                    filenames = [name for name in os.listdir(os.path.join(self.model.path, dirname))]
+                    for j, filename in enumerate(filenames):
+                        data[k] = torchvision.io.read_image(os.path.join(self.model.path, dirname, filename))[0, : , :]/255
+                        k += 1
                 data = data.to(self.device)
                 recon_batch = self.model(data)
                 test_loss += self.loss_function(recon_batch, data).item()
 
-        test_loss /= len(self.test_loader.dataset)
+        test_loss /= 10 * 64
         print('====> Test set loss: {:.4f}'.format(test_loss))

@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import random
 import PIL 
 import cv2
+import os
 
 
 def getLinePositiveSlope(m,b, size):
@@ -17,7 +18,7 @@ def getLinePositiveSlope(m,b, size):
     Returns:
         tuple: The line.
     """
-    if b >= 0 and b <= 64 : 
+    if b >= 0 and b <= size : 
         start_y = b
         start_x = 0
     else:
@@ -81,7 +82,8 @@ def intersect(line1, line2):
 # Generate data
 def generateData():
     # set the size of the image
-    size = 64
+    full_size = 640
+    size = full_size
     # Create a 2D array of zeros
     flag = True
     while flag:
@@ -127,9 +129,23 @@ def gen_batch(batch_size) :
     Returns:
         list: The batch of data.
     """
-    batch = np.zeros((batch_size, 64, 64), dtype=np.uint8)
+    size = 640
+    batch = np.zeros((batch_size, size, size), dtype=np.uint8)
     for i in range(batch_size):
+        try:
+            os.stat('./inputs/data_{}'.format(i))
+        except :
+            os.mkdir('./inputs/data_{}'.format(i))
         batch[i] = generateData()
+        flag = False
+        for j in range(0, 640 - 64, 64):
+            for k in range(0, 640 - 64, 64):
+                image = batch[i][j:j+64, k:k+64]
+                if np.sum(image) > 0 :
+                    plt.imsave('./inputs/data_{}/image_{}:{}_{}:{}.png'.format(i, j, j + 64,k, k + 64), image, cmap='gray')
+                elif flag == False :
+                    plt.imsave('./inputs/data_{}/image_{}:{}_{}:{}.png'.format(i, j, j + 64,k, k + 64), image, cmap='gray')
+                    flag = True
         plt.imsave('./inputs/data_{}.png'.format(i), batch[i], cmap='gray')
     return batch
     
