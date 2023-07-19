@@ -56,38 +56,56 @@ if __name__ == "__main__":
         sys.exit()
 
     try:
-        for epoch in range(1, args.epochs + 1):
-            autoenc.train(epoch)
-            autoenc.test(epoch)
-            if epoch % 10 == 0:
-                torch.save(autoenc.state_dict(), "./weights/" + 'saved_model_{}.pt'.format(epoch))
-                print('Model saved.')
+        weight_path = os.listdir("./weights")
+        epoch = 1
+        train = False
+        if len(weight_path) > 0:
+            autoenc.model.load_state_dict(torch.load("./weights/" + weight_path[-1], map_location=torch.device('cpu')))
+            print('Model loaded : {}'.format(weight_path[-1]))
+            epoch = int(weight_path[-1].split("_")[2].split(".")[0]) + 1
+        if train == True:
+            for epoch in range(epoch, epoch + args.epochs + 1):
+                autoenc.train(epoch)
+                autoenc.test(epoch)
+                if epoch % 10 == 0:
+                    torch.save(autoenc.model.state_dict(), "./weights/" + 'saved_model_{:2d}.pt'.format(epoch))
+                    print('Model saved.')
     except (KeyboardInterrupt, SystemExit):
         print("Manual Interruption")
 
     with torch.no_grad():
         size = 64
         batch_size = 64
-        gen_batch(batch_size)
-        dir_names = [x for x in os.listdir(autoenc.model.path) if not ".png" in x]
-        batch_size = 64 * 82
-        images = torch.zeros(batch_size, 1, size, size)
-        for i, dirname in enumerate(dir_names):
-            filenames = [name for name in os.listdir(os.path.join(autoenc.model.path, dirname))]
-            for j, filename in enumerate(filenames):
-                images[i * 82 + j] = torchvision.io.read_image(os.path.join(autoenc.model.path, dirname, filename))[0, : , :]
-        images = images.to(autoenc.device)
+        batch, count = gen_batch(batch_size)
+        data = torch.zeros(count, 1, 64, 64)
+        keta = 0
+        batch_size = 64
+        for i,b in enumerate(batch):
+            flag = False
+            for j in range(0, 640 - 63, 64):
+                for k in range(0, 640 - 63, 64):
+                    if np.sum(b[j:j+64, k:k+64]) > 0:
+                        data[keta] = torch.from_numpy(b[j:j+64, k:k+64])/255
+                        keta += 1
+                    elif flag == False :
+                        data[keta] = torch.from_numpy(b[j:j+64, k:k+64])/255
+                        keta += 1
+                        flag = True
+        size = data[0].shape[2]  
+        images = data.to(autoenc.device)
+        samples = autoenc.model(images)
         images_per_row = 16
-        interpolations = get_interpolations(args, autoenc.model, autoenc.device, images, images_per_row)
-
-        sample = torch.randn(64, args.embedding_size).to(autoenc.device)
-        sample = autoenc.model.decode(sample).cpu()
-        save_image(sample.view(64, 1, 28, 28),
+        # interpolations = get_interpolations(args, autoenc.model, autoenc.device, images, images_per_row)
+        # sample = torch.randn(count, args.embedding_size).to(autoenc.device)
+        # sample = autoenc.model.decode(sample).cpu()
+        save_image(images.view(count, 1, size, size) * 255,
+                '{}/originals_{}_{}.png'.format(args.results_path, args.model, args.dataset))
+        save_image(samples.view(count, 1, size, size) * 255,
                 '{}/sample_{}_{}.png'.format(args.results_path, args.model, args.dataset))
-        save_image(interpolations.view(-1, 1, 28, 28),
-                '{}/interpolations_{}_{}.png'.format(args.results_path, args.model, args.dataset),  nrow=images_per_row)
-        interpolations = interpolations.cpu()
-        interpolations = np.reshape(interpolations.data.numpy(), (-1, 28, 28))
-        interpolations = ndimage.zoom(interpolations, 5, order=1)
-        interpolations *= 256
-        imageio.mimsave('{}/animation_{}_{}.gif'.format(args.results_path, args.model, args.dataset), interpolations.astype(np.uint8))
+        # save_image(interpolations.view(-1, 1, size, size),
+                # '{}/interpolations_{}_{}.png'.format(args.results_path, args.model, args.dataset),  nrow=images_per_row)
+        # interpolations = interpolations.cpu()
+        # interpolations = np.reshape(interpolations.data.numpy(), (-1, size, size))
+        # interpolations = ndimage.zoom(interpolations, 5, order=1)
+        # interpolations *= 256
+        # imageio.mimsave('{}/animation_{}_{}.gif'.format(args.results_path, args.model, args.dataset), interpolations.astype(np.uint8))

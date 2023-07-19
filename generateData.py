@@ -130,24 +130,27 @@ def gen_batch(batch_size) :
         list: The batch of data.
     """
     size = 640
-    batch = np.zeros((batch_size, size, size), dtype=np.uint8)
+    batch = np.zeros((batch_size, size, size), dtype=np.float32)
+    count = 0
     for i in range(batch_size):
-        try:
-            os.stat('./inputs/data_{}'.format(i))
-        except :
-            os.mkdir('./inputs/data_{}'.format(i))
+        # try:
+        #     os.stat('./inputs/data_{}'.format(i))
+        # except :
+        #     os.mkdir('./inputs/data_{}'.format(i))
         batch[i] = generateData()
         flag = False
-        for j in range(0, 640 - 64, 64):
-            for k in range(0, 640 - 64, 64):
+        for j in range(0, 640 - 63, 64):
+            for k in range(0, 640 - 63, 64):
                 image = batch[i][j:j+64, k:k+64]
                 if np.sum(image) > 0 :
-                    plt.imsave('./inputs/data_{}/image_{}:{}_{}:{}.png'.format(i, j, j + 64,k, k + 64), image, cmap='gray')
+                    # plt.imsave('./inputs/data_{}/image_{}:{}_{}:{}.png'.format(i, j, j + 64,k, k + 64), image, cmap='gray')
+                    count += 1
                 elif flag == False :
-                    plt.imsave('./inputs/data_{}/image_{}:{}_{}:{}.png'.format(i, j, j + 64,k, k + 64), image, cmap='gray')
+                    # plt.imsave('./inputs/data_{}/image_{}:{}_{}:{}.png'.format(i, j, j + 64,k, k + 64), image, cmap='gray')
+                    count += 1
                     flag = True
-        plt.imsave('./inputs/data_{}.png'.format(i), batch[i], cmap='gray')
-    return batch
+        # plt.imsave('./inputs/data_{}.png'.format(i), batch[i], cmap='gray')
+    return batch, count
     
 if __name__ == '__main__':
     gen_batch(64)

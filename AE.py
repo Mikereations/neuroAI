@@ -48,26 +48,31 @@ class AE(object):
         self.optimizer = optim.Adam(self.model.parameters(), lr=1e-3)
 
     def loss_function(self, recon_x, x):
-        loss = self.BCE(recon_x, x.view(-1, self.model.image_size ** 2), reduction='sum')
+        # print(recon_x.shape), print(x.view(-1, x.shape[2] ** 2).shape)
+        if len(x.shape) == 4:
+            x = x.view(-1, x.shape[2] ** 2)
+        loss = -(x*torch.log(recon_x) + (self.model.weights[0])*(1-x)*torch.log(1-recon_x)).sum()
         return loss
 
     def train(self, epoch, batch_size=64):
         self.model.train()
         train_loss = 0
         for batch_idx in range(100):
-            gen_batch(batch_size)
-            dir_names = [x for x in os.listdir(self.model.path) if not ".png" in x and "data" in x]
-            filenum = [len(os.listdir(os.path.join(self.model.path, dirname))) for dirname in dir_names]
-            # print(np.sum(filenum))
-            batch_size = np.sum(filenum)
-            data = torch.zeros(batch_size, 1, 64, 64)
-            k = 0
+            batch, count = gen_batch(batch_size)
+            data = torch.zeros(count, 1, 64, 64)
+            keta = 0
             batch_size = 64
-            for i, dirname in enumerate(dir_names):
-                filenames = [name for name in os.listdir(os.path.join(self.model.path, dirname))]
-                for j, filename in enumerate(filenames):
-                    data[k] = torchvision.io.read_image(os.path.join(self.model.path, dirname, filename))[0, : , :]/255
-                    k += 1
+            for i,b in enumerate(batch):
+                flag = False
+                for j in range(0, 640 - 63, 64):
+                    for k in range(0, 640 - 63, 64):
+                        if np.sum(b[j:j+64, k:k+64]) > 0:
+                            data[keta] = torch.from_numpy(b[j:j+64, k:k+64])/255
+                            keta += 1
+                        elif flag == False :
+                            data[keta] = torch.from_numpy(b[j:j+64, k:k+64])/255
+                            keta += 1
+                            flag = True  
             data = data.to(self.device)
             self.optimizer.zero_grad()
             recon_batch = self.model(data)
@@ -83,35 +88,37 @@ class AE(object):
             # print("loss: ", loss.item())
             train_loss += loss.item()
             self.optimizer.step()
-            if batch_idx % 10 == 0:
+            if batch_idx % 10 == 9:
                 print('Train Epoch: {} [{}/{} ({:.1f}%)]\tLoss: {:.6f}'.format(
-                    epoch, batch_idx * len(data), 100 * len(data),
-                    float(batch_idx),
+                    epoch, (batch_idx + 1) * len(data), 100 * len(data),
+                    float(batch_idx + 1),
                     loss.item() / len(data)))
         print('====> Epoch: {} Average loss: {:.4f}'.format(
-              epoch, train_loss / 100 * len(data)))
+              epoch, train_loss / (100 * len(data))))
 
     def test(self, epoch):
         self.model.eval()
         test_loss = 0
         with torch.no_grad():
             for i in range(10):
-                gen_batch(64)
-                dir_names = [x for x in os.listdir(self.model.path) if not ".png" in x and "data" in x]
-                filenum = [len(os.listdir(os.path.join(self.model.path, dirname))) for dirname in dir_names]
-                # print(np.sum(filenum))
-                batch_size = np.sum(filenum)
-                data = torch.zeros(batch_size, 1, 64, 64)
-                k = 0
+                batch, count = gen_batch(batch_size)
+                data = torch.zeros(count, 1, 64, 64)
+                keta = 0
                 batch_size = 64
-                for i, dirname in enumerate(dir_names):
-                    filenames = [name for name in os.listdir(os.path.join(self.model.path, dirname))]
-                    for j, filename in enumerate(filenames):
-                        data[k] = torchvision.io.read_image(os.path.join(self.model.path, dirname, filename))[0, : , :]/255
-                        k += 1
+                for i,b in enumerate(batch):
+                    flag = False
+                    for j in range(0, 640 - 63, 64):
+                        for k in range(0, 640 - 63, 64):
+                            if np.sum(b[j:j+64, k:k+64]) > 0:
+                                data[keta] = torch.from_numpy(b[j:j+64, k:k+64])/255
+                                keta += 1
+                            elif flag == False :
+                                data[keta] = torch.from_numpy(b[j:j+64, k:k+64])/255
+                                keta += 1
+                                flag = True  
                 data = data.to(self.device)
                 recon_batch = self.model(data)
                 test_loss += self.loss_function(recon_batch, data).item()
 
-        test_loss /= 10 * 64
+        test_loss /= (10 * len(data))
         print('====> Test set loss: {:.4f}'.format(test_loss))
