@@ -141,6 +141,10 @@ class GPTLanguageModel(nn.Module):
         self.blocks = nn.Sequential(*[Block(n_embd, n_head=n_head) for _ in range(n_layer)])
         self.ln_f = nn.LayerNorm(n_embd) # final layer norm
         self.lm_head = nn.Linear(n_embd, n_embd)
+        self.positional_recurcer = nn.Sequential(
+            nn.Linear(64, 32),
+            nn.Sigmoid(),
+        )
         self.pos_prog = nn.Conv1d(1,32, kernel_size=64, stride=32)
 
         # better init, not covered in the original GPT video, but important, will cover in followup video
@@ -162,7 +166,10 @@ class GPTLanguageModel(nn.Module):
         # idx and targets are both (B,T) tensor of integers
         tok_emb = idx # (B,T,C)
         # generate a unique positional embedding for each token in the sequence based on the location
-        pos_emb = self.pos_prog(torch.cat([torch.zeros((B, 1, 32)).to(self.model.device),self.position_embedding(locs)], dim = 1).view(-1, 1, 20 * 32)).permute(0,2,1) # (B, T,C)
+        pos_emb = self.position_embedding(locs)
+        pos_emb[:, 0, :] = self.positional_recurcer(torch.cat([torch.zeros((B, 32)).to(self.model.device), pos_emb[:, 0, :]], dim = 1))
+        for i in range(1, T):
+            pos_emb[:, i, :] = self.positional_recurcer(torch.cat([pos_emb[:, i - 1, :], pos_emb[:, i, :]], dim=1))
         x = self.blocks((tok_emb,pos_emb)) # (B,T,C)
         x = self.ln_f(x[0]) # (B,T,C)
         logits = self.lm_head(x) # (B,T,vocab_size)
