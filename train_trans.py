@@ -8,6 +8,7 @@ from torchvision.utils import save_image
 from generateData import gen_batch
 from AE import AE
 from transformer import GPTLanguageModel
+from transformer_non import GPTLanguageModel as GPTLanguageModel_non
 
 
 parser = argparse.ArgumentParser(
@@ -30,6 +31,8 @@ parser.add_argument('--model', type=str, default='AE', metavar='N',
                     help='Which architecture to use')
 parser.add_argument('--dataset', type=str, default='MNIST', metavar='N',
                     help='Which dataset to use')
+parser.add_argument('--method', type=str, default='non-itt', metavar='N',
+                    help='Whether to train on an itterative approach or not')
 
 
 # hyperparameters
@@ -53,7 +56,8 @@ torch.manual_seed(args.seed)
 
 # Initialize the model and load its weights
 autoenc = AE(args)
-transformer = GPTLanguageModel(autoenc).to(autoenc.device)
+transformer = GPTLanguageModel(autoenc).to(autoenc.device) if args.method == "itt" else GPTLanguageModel_non(autoenc).to(autoenc.device)
+print("The method is : ", args.method)
 architectures = {'AE':  autoenc, 'Transformer': transformer}
 if __name__ == "__main__":
     try:
@@ -75,9 +79,11 @@ if __name__ == "__main__":
         # 1. get a batch of images 
         batch, count = gen_batch(64)
         # 2. use the policy to generate 20 positions for each image
-        positions = [architectures["Transformer"].policy() if i % 20 != 0 else np.array([0,0]) for i in range(64 * 20)]
+        positions = architectures["Transformer"].selective_policy(batch)
+        #[architectures["Transformer"].policy() if i % 20 != 0 else np.array([0,0]) for i in range(64 * 20)]
         dp = np.array([positions[i] - positions[i - 1] for i in range(64 * 20) if i % 20 != 0], dtype=np.float32)
         dp = torch.from_numpy(dp).reshape(64, 19, 2)
+        positions = np.array(positions, dtype=np.float32)
         # 3. use the positions to get the next image in the sequence
         image_data = [batch[int(i / 20)][int(positions[i][0]):int(positions[i][0]+64), int(positions[i][1]):int(positions[i][1]+64)]/255.0 for i in range(64 * 20)]
         input_image_data = torch.stack([torch.from_numpy(image_data[i]) for i in range(64 * 20) if i % 20 != 19]).reshape(64 * 19, 1 , 64, 64)
@@ -87,7 +93,11 @@ if __name__ == "__main__":
         input_encoded_images = architectures["AE"].model.encode(input_image_data.to(architectures["AE"].device))
         output_encoded_images = architectures["AE"].model.encode(output_image_data.to(architectures["AE"].device))
         x, y = input_encoded_images.reshape(-1, 19, 32).to(architectures["AE"].device), output_encoded_images.reshape(-1, 19, 32).to(architectures["AE"].device)
-        return x, y, dp.to(architectures["AE"].device)
+        if args.method == "itt":
+            return x, y, dp.to(architectures["AE"].device)
+        else :
+            positions = torch.from_numpy(positions).reshape(64, 20, 2)[:, :-1, :].to(architectures["AE"].device)
+            return x, y, positions
     @torch.no_grad()
     def estimate_loss():
         out = {}
@@ -140,7 +150,7 @@ if __name__ == "__main__":
             model.load_state_dict(torch.load("./weights/" + weight_path[-1], map_location=autoenc.device))
             print('The trained transformer model was loaded succesfully, weights : {}'.format(weight_path[-1]))
             print("Resuming training")
-            epoch = int(weight_path[-1].split("_")[2].split(".")[0]) + 1
+            epoch = int(weight_path[-1].split("_")[1].split(".")[0]) + 1
         else : 
             print("No available weights, training from scratch")
     except (KeyboardInterrupt, SystemExit):
@@ -153,6 +163,7 @@ if __name__ == "__main__":
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
 
     for iter in range(epoch, max_iters + epoch):
+        print(iter)
         # every once in a while evaluate the loss on train and val sets
         if iter % eval_interval == 0 or iter == max_iters - 1:
             losses = estimate_loss_once()

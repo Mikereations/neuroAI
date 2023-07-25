@@ -188,6 +188,21 @@ class GPTLanguageModel(nn.Module):
         dx = random.randint(0, 640 - 64)
         dy = random.randint(0, 640 - 64)
         return np.array([dx, dy], dtype=np.float32)
+    
+    def selective_policy(self, images) :
+        # generate 20 glimpses per image for non dark pixels
+        positions = torch.zeros((images.shape[0], 20, 2))
+        for i, image in enumerate(images) :
+            got_dark = False
+            for j in range(20) :
+                position = self.policy()
+                while (image[position[0]:position[0]+64, position[1]:position[1]+64] == 0).all() and got_dark == True :
+                    position = self.policy()
+                if (image[position[0]:position[0]+64, position[1]:position[1]+64] == 0).all() and got_dark == False :
+                    got_dark = True
+                positions[i, j] = torch.from_numpy(position)
+        return positions
+    
     def generate(self, idx, max_new_tokens):
         # idx is (B, T) array of indices in the current context
         for _ in range(max_new_tokens):
