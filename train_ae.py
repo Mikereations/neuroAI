@@ -6,6 +6,7 @@ import torchvision
 import torch
 from torchvision.utils import save_image
 from generateData import gen_batch
+from test_transformer import test_performance
 
 from AE import AE
 
@@ -57,6 +58,7 @@ if __name__ == "__main__":
 
     try:
         weight_path = os.listdir("./weights")
+        weight_path = [w for w in weight_path if w.startswith("saved_model")]
         epoch = 1
         train = False
         if len(weight_path) > 0:
@@ -92,15 +94,16 @@ if __name__ == "__main__":
                         keta += 1
                         flag = True
         size = data[0].shape[2]  
+        data = test_performance()
         images = data.to(autoenc.device)
         samples = autoenc.model(images)
         images_per_row = 16
         # interpolations = get_interpolations(args, autoenc.model, autoenc.device, images, images_per_row)
         # sample = torch.randn(count, args.embedding_size).to(autoenc.device)
         # sample = autoenc.model.decode(sample).cpu()
-        save_image(images.view(count, 1, size, size) * 255,
+        save_image(images.view(64 * 19, 1, size, size) * 255,
                 '{}/originals_{}_{}.png'.format(args.results_path, args.model, args.dataset))
-        save_image(samples.view(count, 1, size, size) * 255,
+        save_image(samples.view(64 * 19, 1, size, size) * 255,
                 '{}/sample_{}_{}.png'.format(args.results_path, args.model, args.dataset))
         # save_image(interpolations.view(-1, 1, size, size),
                 # '{}/interpolations_{}_{}.png'.format(args.results_path, args.model, args.dataset),  nrow=images_per_row)

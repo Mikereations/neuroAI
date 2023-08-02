@@ -9,7 +9,6 @@ from generateData import gen_batch
 from AE import AE
 from transformer import GPTLanguageModel
 from transformer_non import GPTLanguageModel as GPTLanguageModel_non
-from transformer_typical import GPTLanguageModel as GPTLanguageModel_typical
 
 
 parser = argparse.ArgumentParser(
@@ -32,7 +31,7 @@ parser.add_argument('--model', type=str, default='AE', metavar='N',
                     help='Which architecture to use')
 parser.add_argument('--dataset', type=str, default='MNIST', metavar='N',
                     help='Which dataset to use')
-parser.add_argument('--method', type=str, default='typical', metavar='N',
+parser.add_argument('--method', type=str, default='non-itt', metavar='N',
                     help='Whether to train on an itterative approach or not')
 
 
@@ -40,7 +39,7 @@ parser.add_argument('--method', type=str, default='typical', metavar='N',
 batch_size = 64 # how many independent sequences will we process in parallel?
 block_size = 2 # what is the maximum context length for predictions?
 max_iters = 5000
-eval_interval = 100
+eval_interval = 500
 learning_rate = 3e-4
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 eval_iters = 200
@@ -58,8 +57,6 @@ torch.manual_seed(args.seed)
 # Initialize the model and load its weights
 autoenc = AE(args)
 transformer = GPTLanguageModel(autoenc).to(autoenc.device) if args.method == "itt" else GPTLanguageModel_non(autoenc).to(autoenc.device)
-if args.method == "typical" :
-    transformer = GPTLanguageModel_typical(autoenc).to(autoenc.device)
 print("The method is : ", args.method)
 architectures = {'AE':  autoenc, 'Transformer': transformer}
 if __name__ == "__main__":
@@ -132,6 +129,7 @@ if __name__ == "__main__":
                 # print("The shape of Y is : ", Y.shape)
                 # print(dp.dtype, dp.shape)
                 logits, _ = model(X, dp, Y)
+                print("The shape of the logits is : ", logits.shape)
                 recon_batch = architectures["AE"].model.decode(logits.view(-1, 32))
                 data = architectures["AE"].model.decode(Y.view(-1, 32))
                 # print("The shape of the recon batch is : ", recon_batch.shape, " and the shape of the data is : ", data.shape)

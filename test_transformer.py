@@ -6,6 +6,8 @@ import torch.nn as nn
 import torch.optim as optim
 import numpy as np
 from generateData import gen_batch
+from results_vis import compare_results
+from torchvision.utils import save_image
 
 
 parser = argparse.ArgumentParser(
@@ -58,10 +60,12 @@ architectures = {'AE':  autoenc, 'Transformer': transformer}
 for model in architectures :
     if model == "AE" :
         architectures[model].model.load_state_dict(torch.load(os.path.join(args.results_path, model + '.pt'), map_location=torch.device('cpu')))
-        architectures[model].model.eval()
+        for param in architectures[model].model.parameters():
+            param.requires_grad = False
+        
     else :
         architectures[model].load_state_dict(torch.load(os.path.join(args.results_path, model + '.pt')))
-        architectures[model].eval()
+        # architectures[model]
     
 
 def performance() :
@@ -78,14 +82,17 @@ def performance() :
         dp = np.array([positions[i] - positions[i - 1] for i in range(64 * 20) if i % 20 != 0], dtype=np.float32)
         dp = torch.from_numpy(dp).reshape(64, 19, 2)
         # 3. use the positions to get the next image in the sequence
-        image_data = [batch[int(i / 20)][int(positions[i][0]):int(positions[i][0]+64), int(positions[i][1]):int(positions[i][1]+64)]/255.0 for i in range(64 * 20)]
-        input_image_data = torch.stack([torch.from_numpy(image_data[i]) for i in range(64 * 20) if i % 20 != 19]).reshape(64 * 19, 1 , 64, 64)
-        output_image_data = torch.stack([torch.from_numpy(image_data[i]) for i in range(64 * 20) if i % 20 != 0]).reshape(64 * 19, 1 , 64, 64)
+        image_data = [batch[int(i / 20)][int(positions[i][0]):int(positions[i][0]+64), int(positions[i][1]):int(positions[i][1]+64)] for i in range(64 * 20)]
+        input_image_data = torch.stack([torch.from_numpy(image_data[i])/255 for i in range(64 * 20) if i % 20 != 19]).reshape(64 * 19, 1 , 64, 64)
+        output_image_data = torch.stack([torch.from_numpy(image_data[i])/255 for i in range(64 * 20) if i % 20 != 0]).reshape(64 * 19, 1 , 64, 64)
         # 4. encode the images using the encoder
         # print(input_image_data.dtype, input_image_data.shape)
         input_encoded_images = architectures["AE"].model.encode(input_image_data.to(architectures["AE"].device))
         output_encoded_images = architectures["AE"].model.encode(output_image_data.to(architectures["AE"].device))
-        x, y = input_encoded_images.reshape(-1, 19, 32).to(architectures["AE"].device), output_encoded_images.reshape(-1, 19, 32).to(architectures["AE"].device)
+        output_decoded_images = architectures["AE"].model(output_image_data.to(architectures["AE"].device))
+        save_image(output_decoded_images.view(64 * 19, 1, 64, 64) * 255,
+                '{}/sampleout_{}_{}.png'.format(args.results_path, args.model, args.dataset))
+        x, y = input_encoded_images.view(-1, 19, 32).to(architectures["AE"].device), output_encoded_images.view(-1, 19, 32).to(architectures["AE"].device)
         dp = dp.to(architectures["AE"].device)
         # For calculating the overlapping pixels
         psudeo_image = torch.zeros(64, 640, 640)
@@ -94,7 +101,7 @@ def performance() :
             # calculate the evlauation metrics
             # get the data for the first j glimpses
             xj, yj, dpj = x[:, :j + 1, :].view(64, j + 1, 32) ,y[:, j, :], dp[:, :j + 1, :].view(64, j + 1, 2)
-            for image in psudeo_image :
+            # for image in psudeo_image :
                 
             # store the current number of glimpses
             #number_of_glimpses.append(j * xj.shape[0])
@@ -115,9 +122,36 @@ def performance() :
             logits = predicted[:, -1, :]
             predicted_image = architectures["Transformer"].model.model.decode(logits.view(-1, 32))
             ground_truth = architectures["Transformer"].model.model.decode(yj.view(-1, 32))
+            # save_image(predicted_image.view(64, 1, 64, 64) * 255,
+                # '{}/predicted_{}_{}.png'.format(args.results_path, args.model, args.dataset))
+            # save_image(ground_truth.view(64, 1, 64, 64) * 255,
+                # '{}/gt_{}_{}.png'.format(args.results_path, args.model, args.dataset))
+            # compare_results(predicted_image.reshape(-1, 64, 64), ground_truth.reshape(-1, 64, 64))
             losses[j] += architectures["Transformer"].model.loss_function(predicted_image, ground_truth)
             print("current loss at j = {} is {}".format(j, losses[j] / (64 * (i + 1))))
     return x, y
+
+
+def test_performance() :
+    total_distance = []
+    total_pixels = []
+    number_of_glimpses = []
+    losses = np.zeros(19)
+    overlap = []
+    # 1. get a batch of images 
+    batch, count = gen_batch(64)
+    # 2. use the policy to generate 20 positions for each image
+    positions = [architectures["Transformer"].policy() if i % 20 != 0 else np.array([0,0]) for i in range(64 * 20)]
+    dp = np.array([positions[i] - positions[i - 1] for i in range(64 * 20) if i % 20 != 0], dtype=np.float32)
+    dp = torch.from_numpy(dp).reshape(64, 19, 2)
+    # 3. use the positions to get the next image in the sequence
+    image_data = [batch[int(i / 20)][int(positions[i][0]):int(positions[i][0]+64), int(positions[i][1]):int(positions[i][1]+64)] for i in range(64 * 20)]
+    input_image_data = torch.stack([torch.from_numpy(image_data[i])/255 for i in range(64 * 20) if i % 20 != 19]).reshape(64 * 19, 1 , 64, 64)
+    output_image_data = torch.stack([torch.from_numpy(image_data[i])/255 for i in range(64 * 20) if i % 20 != 0]).reshape(64 * 19, 1 , 64, 64)
+        
+    return output_image_data
+
+
 
 if __name__ == "__main__":
     performance()
